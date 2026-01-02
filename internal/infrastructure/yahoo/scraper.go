@@ -74,432 +74,138 @@ func (s *yahooScraper) FetchByID(ctx context.Context, auctionID string) (*model.
 }
 
 // extractItemInfo はHTMLドキュメントから商品情報を抽出します
+// Next.jsのJSONデータを優先して使用し、取得できない場合はエラーを返します
 func (s *yahooScraper) extractItemInfo(doc *goquery.Document, auctionID string) (*model.Item, error) {
-	item := &model.Item{
-		AuctionID: auctionID,
-		Status:    model.StatusUnspecified,
+	// JSONデータをパース
+	nextData, err := s.parseNextData(doc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse next data: %w", err)
 	}
 
-	// タイトル取得
-	// ヤフオクの商品ページのタイトルセレクタ（実際のHTML構造に合わせて調整が必要）
-	title := strings.TrimSpace(doc.Find("h1.ProductTitle__text, h1.yaProductTitle, h1").First().Text())
-	if title == "" {
-		// フォールバック: titleタグから取得
-		title = doc.Find("title").Text()
-		// " - ヤフオク!"などの接尾辞を除去
-		title = strings.TrimSuffix(title, " - ヤフオク!")
-		title = strings.TrimSpace(title)
-	}
-	item.Title = title
-
-	if item.Title == "" {
-		return nil, fmt.Errorf("item title not found - page structure may have changed")
-	}
-
-	// 現在価格取得
-	// 複数のセレクタを試行
-	priceText := strings.TrimSpace(doc.Find(".Price__value, .yaPrice, .price, [class*='Price'], [class*='price']").First().Text())
-
-	// フォールバック: ページ全体から正規表現で「現在」の後に続く価格を直接抽出
-	if priceText == "" {
-		pageText := doc.Text()
-		// 「現在」の後に続く価格パターンを抽出（例: "現在 22,000円（税込）"）
-		pricePattern := regexp.MustCompile(`現在\s*([0-9,]+)\s*円`)
-		matches := pricePattern.FindStringSubmatch(pageText)
-		if len(matches) > 1 {
-			priceText = matches[0] // マッチした全体の文字列を使用
-		}
-	}
-
-	// さらにフォールバック: 「現在」と「円」を含むテキストを検索
-	if priceText == "" {
-		var foundPriceText string
-		doc.Find("*").Each(func(i int, s *goquery.Selection) {
-			if foundPriceText != "" {
-				return // 既に見つかった場合は終了
-			}
-			text := strings.TrimSpace(s.Text())
-			// 「現在」と「円」を含み、数字も含むテキストを探す
-			if strings.Contains(text, "現在") && strings.Contains(text, "円") {
-				// 数字が含まれているか確認
-				if regexp.MustCompile(`\d`).MatchString(text) {
-					foundPriceText = text
-				}
-			}
-		})
-		if foundPriceText != "" {
-			priceText = foundPriceText
-		}
-	}
-
-	// 最後のフォールバック: ページ全体から「現在」と「円」を含む行を検索
-	if priceText == "" {
-		pageText := doc.Text()
-		lines := strings.Split(pageText, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.Contains(line, "現在") && strings.Contains(line, "円") {
-				if regexp.MustCompile(`\d`).MatchString(line) {
-					priceText = line
-					break
-				}
-			}
-		}
-	}
-
-	item.CurrentPrice = parsePrice(priceText)
-
-	// 送料取得
-	shippingText := strings.TrimSpace(doc.Find(".ShippingFee__value, .shippingFee, .shipping").First().Text())
-	if shippingText == "" {
-		// フォールバック: 送料を含む可能性のあるテキストを検索
-		doc.Find("*").Each(func(i int, s *goquery.Selection) {
-			text := s.Text()
-			if strings.Contains(text, "送料") || strings.Contains(text, "配送料") {
-				shippingText = text
-			}
-		})
-	}
-	item.ShippingFee = parsePrice(shippingText)
-
-	// 商品画像URL取得
-	item.Images = s.extractImageURLs(doc)
-
-	// 商品説明取得
-	// まずNext.jsのデータ（JSON）から取得を試みる
-	description := s.extractDescriptionFromJSON(doc)
-	if description == "" {
-		// フォールバック: div#description配下のsection直下のdivの中身を取得
-		var htmlContent string
-		htmlContent, _ = doc.Find("#description section > div").Html()
-		description = strings.TrimSpace(htmlContent)
-	}
-	item.Description = description
-
-	// オークション状態の判定
-	// より正確な判定のため、特定のキーワードとHTML要素を確認
-	pageText := doc.Text()
-	lowerText := strings.ToLower(pageText)
-
-	// キャンセル状態の判定（最も明確なキーワードから判定）
-	if strings.Contains(lowerText, "キャンセル") || strings.Contains(lowerText, "取り消し") {
-		item.Status = model.StatusCanceled
-	} else if s.isAuctionFinished(doc, lowerText) {
-		// 終了済みの判定（「終了済み」「落札済み」などの特定キーワードを確認）
-		item.Status = model.StatusFinished
-	} else {
-		// デフォルトは出品中（「入札する」ボタンが存在する場合は出品中）
-		item.Status = model.StatusActive
-	}
-
-	// オークション情報の抽出
-	item.AuctionInfo = s.extractAuctionInformation(doc, auctionID)
-
+	// JSONからモデルへのマッピング
+	item := s.extractItemFromJSON(nextData, auctionID)
 	return item, nil
 }
 
-// isAuctionFinished はオークションが終了済みかどうかを判定します
-// 「終了日時」や「終了予定」などの文字列は除外し、実際に終了したことを示す
-// キーワードのみを確認します
-func (s *yahooScraper) isAuctionFinished(doc *goquery.Document, lowerText string) bool {
-	// 「入札する」ボタンが存在する場合は出品中
-	if doc.Find("button, a").FilterFunction(func(i int, s *goquery.Selection) bool {
-		text := strings.ToLower(s.Text())
-		return strings.Contains(text, "入札する") || strings.Contains(text, "入札")
-	}).Length() > 0 {
-		return false
-	}
-
-	// 終了済みを示す特定のキーワードを確認
-	// 「終了日時」「終了予定」は除外し、「終了済み」「落札済み」などのみを確認
-	finishedKeywords := []string{
-		"終了済み",
-		"落札済み",
-		"このオークションは終了しました",
-		"オークションは終了しました",
-		"終了しました",
-		"落札されました",
-		"時間切れ",
-	}
-
-	for _, keyword := range finishedKeywords {
-		if strings.Contains(lowerText, strings.ToLower(keyword)) {
-			return true
-		}
-	}
-
-	return false
+// NextData はNext.jsのJSON構造体です
+type NextData struct {
+	Props struct {
+		PageProps struct {
+			InitialState struct {
+				Item struct {
+					Detail struct {
+						Item struct {
+							Title                string `json:"title"`
+							Price                int64  `json:"price"`
+							TaxinPrice           int64  `json:"taxinPrice"`
+							Status               string `json:"status"`
+							DescriptionHtml      string `json:"descriptionHtml"`
+							InitPrice            int64  `json:"initPrice"`
+							TaxinStartPrice      int64  `json:"taxinStartPrice"`
+							StartTime            string `json:"startTime"` // ISO 8601
+							EndTime              string `json:"endTime"`   // ISO 8601
+							IsEarlyClosing       bool   `json:"isEarlyClosing"`
+							IsAutomaticExtension bool   `json:"isAutomaticExtension"`
+							ItemReturnable       struct {
+								Allowed bool   `json:"allowed"`
+								Comment string `json:"comment"`
+							} `json:"itemReturnable"`
+							Img []struct {
+								Image  string `json:"image"`
+								Width  int    `json:"width"`
+								Height int    `json:"height"`
+							} `json:"img"`
+						} `json:"item"`
+					} `json:"detail"`
+				} `json:"item"`
+			} `json:"initialState"`
+		} `json:"pageProps"`
+	} `json:"props"`
 }
 
-// isThumbnailImage はURLがサムネイル画像かどうかを判定します
-func (s *yahooScraper) isThumbnailImage(url string) bool {
-	lowerURL := strings.ToLower(url)
-	// サムネイル画像を示すキーワードをチェック
-	thumbnailKeywords := []string{
-		"thumb",
-		"thumbnail",
-		"_s",      // 小さいサイズ（例: s128x128）
-		"_m",      // 中サイズ（例: m128x128）
-		"_xs",     // 超小サイズ
-		"/s/",     // サムネイルパス
-		"/thumb/", // サムネイルディレクトリ
-		"size=s",  // サイズパラメータ
-		"size=m",  // サイズパラメータ
-	}
-	for _, keyword := range thumbnailKeywords {
-		if strings.Contains(lowerURL, keyword) {
-			return true
-		}
-	}
-	// サイズ指定パターンをチェック（例: s128x128, m256x256など）
-	sizePattern := regexp.MustCompile(`[sm]\d+x\d+`)
-	if sizePattern.MatchString(lowerURL) {
-		return true
-	}
-	return false
-}
-
-// extractImageURLs はHTMLドキュメントから商品画像のURLを抽出します
-func (s *yahooScraper) extractImageURLs(doc *goquery.Document) []string {
-	var imageURLs []string
-	seenURLs := make(map[string]bool)
-
-	// 商品画像の一般的なセレクタを試行
-	selectors := []string{
-		".ProductImage img",
-		".ProductImage__main img",
-		".yaProductImage img",
-		".productImage img",
-		"[class*='ProductImage'] img",
-		"[class*='productImage'] img",
-		"[class*='Image'] img",
-		"img[src*='auctions.c.yimg.jp']",
-		"img[data-src*='auctions.c.yimg.jp']",
-	}
-
-	for _, selector := range selectors {
-		doc.Find(selector).Each(func(i int, sel *goquery.Selection) {
-			// src属性を優先、なければdata-src属性を試行
-			url := sel.AttrOr("src", "")
-			if url == "" {
-				url = sel.AttrOr("data-src", "")
-			}
-			if url == "" {
-				url = sel.AttrOr("data-lazy-src", "")
-			}
-
-			// URLを正規化（相対URLを絶対URLに変換）
-			if url != "" {
-				url = strings.TrimSpace(url)
-				// 相対URLの場合は絶対URLに変換
-				if strings.HasPrefix(url, "//") {
-					url = "https:" + url
-				} else if strings.HasPrefix(url, "/") {
-					url = "https://auctions.yahoo.co.jp" + url
-				}
-				// サムネイル画像を除外
-				if s.isThumbnailImage(url) {
-					return
-				}
-				// 重複を避ける
-				if !seenURLs[url] && url != "" {
-					seenURLs[url] = true
-					imageURLs = append(imageURLs, url)
-				}
-			}
-		})
-		if len(imageURLs) > 0 {
-			break // 見つかったら終了
-		}
-	}
-
-	// フォールバック: すべてのimgタグから商品画像らしいものを探す
-	if len(imageURLs) == 0 {
-		doc.Find("img").Each(func(i int, sel *goquery.Selection) {
-			url := sel.AttrOr("src", "")
-			if url == "" {
-				url = sel.AttrOr("data-src", "")
-			}
-			if url == "" {
-				url = sel.AttrOr("data-lazy-src", "")
-			}
-
-			// Yahooオークションの画像URLかどうかを確認
-			if url != "" && (strings.Contains(url, "auctions.c.yimg.jp") || strings.Contains(url, "yahoo.co.jp")) {
-				url = strings.TrimSpace(url)
-				// 相対URLの場合は絶対URLに変換
-				if strings.HasPrefix(url, "//") {
-					url = "https:" + url
-				} else if strings.HasPrefix(url, "/") {
-					url = "https://auctions.yahoo.co.jp" + url
-				}
-				// ロゴやアイコンなどの不要な画像を除外
-				if !strings.Contains(url, "logo") && !strings.Contains(url, "icon") && !strings.Contains(url, "avatar") {
-					// サムネイル画像を除外
-					if s.isThumbnailImage(url) {
-						return
-					}
-					if !seenURLs[url] && url != "" {
-						seenURLs[url] = true
-						imageURLs = append(imageURLs, url)
-					}
-				}
-			}
-		})
-	}
-
-	return imageURLs
-}
-
-// extractAuctionInformation はHTMLドキュメントからオークション情報を抽出します
-func (s *yahooScraper) extractAuctionInformation(doc *goquery.Document, auctionID string) *model.AuctionInformation {
-	info := &model.AuctionInformation{
-		AuctionID: auctionID,
-	}
-
-	// div#otherInfoの配下から情報を抽出
-	otherInfo := doc.Find("#otherInfo")
-	if otherInfo.Length() == 0 {
-		// フォールバック: otherInfoというクラス名やid属性を持つ要素を探す
-		otherInfo = doc.Find("[id*='otherInfo'], [class*='otherInfo'], [id*='OtherInfo'], [class*='OtherInfo']")
-	}
-
-	// 「その他の情報」テーブルから情報を抽出
-	// div#otherInfo配下のテーブルの各行（tr）を走査して、ラベル（th）と値（td）を取得
-	otherInfo.Find("table tr").Each(func(i int, tr *goquery.Selection) {
-		th := tr.Find("th")
-		td := tr.Find("td")
-
-		if th.Length() == 0 || td.Length() == 0 {
-			return
-		}
-
-		label := strings.TrimSpace(th.First().Text())
-		value := strings.TrimSpace(td.First().Text())
-
-		if label == "" || value == "" {
-			return
-		}
-
-		// 開始時の価格（「開始時の価格」から取得）
-		if strings.Contains(label, "開始時の価格") {
-			info.StartPrice = parsePrice(value)
-		}
-
-		// 開始日時
-		if strings.Contains(label, "開始日時") {
-			if t, err := parseDateTime(value); err == nil {
-				info.StartTime = t
-			}
-		}
-
-		// 終了日時
-		if strings.Contains(label, "終了日時") {
-			if t, err := parseDateTime(value); err == nil {
-				info.EndTime = t
-			}
-		}
-
-		// 早期終了
-		if strings.Contains(label, "早期終了") {
-			info.EarlyEnd = strings.Contains(value, "あり")
-		}
-
-		// 自動延長
-		if strings.Contains(label, "自動延長") {
-			info.AutoExtension = strings.Contains(value, "あり")
-		}
-
-		// 返品の可否
-		if strings.Contains(label, "返品の可否") {
-			// returnableは「返品可」または「返品可能」が含まれているかで判定
-			info.Returnable = strings.Contains(value, "返品可") || strings.Contains(value, "返品可能")
-			// returnable_detailには文字列情報全体を代入
-			info.ReturnableDetail = value
-		}
-	})
-
-	// フォールバック: div#otherInfo配下から正規表現で抽出
-	otherInfoText := otherInfo.Text()
-	if info.StartPrice == 0 {
-		pricePattern := regexp.MustCompile(`開始時の価格\s*([0-9,]+)\s*円`)
-		matches := pricePattern.FindStringSubmatch(otherInfoText)
-		if len(matches) > 1 {
-			info.StartPrice = parsePrice(matches[0])
-		}
-	}
-
-	if info.StartTime.IsZero() {
-		startPattern := regexp.MustCompile(`開始日時\s*(\d{4}年\d{1,2}月\d{1,2}日[^終了]*\d{1,2}時\d{1,2}分)`)
-		matches := startPattern.FindStringSubmatch(otherInfoText)
-		if len(matches) > 1 {
-			if t, err := parseDateTime(matches[1]); err == nil {
-				info.StartTime = t
-			}
-		}
-	}
-
-	if info.EndTime.IsZero() {
-		endPattern := regexp.MustCompile(`終了日時\s*(\d{4}年\d{1,2}月\d{1,2}日[^終了]*\d{1,2}時\d{1,2}分)`)
-		matches := endPattern.FindStringSubmatch(otherInfoText)
-		if len(matches) > 1 {
-			if t, err := parseDateTime(matches[1]); err == nil {
-				info.EndTime = t
-			}
-		}
-	}
-
-	if !info.EarlyEnd {
-		info.EarlyEnd = regexp.MustCompile(`早期終了\s*あり`).MatchString(otherInfoText)
-	}
-
-	if !info.AutoExtension {
-		info.AutoExtension = regexp.MustCompile(`自動延長\s*あり`).MatchString(otherInfoText)
-	}
-
-	if info.ReturnableDetail == "" {
-		returnPattern := regexp.MustCompile(`返品の可否\s*([^\n]+)`)
-		matches := returnPattern.FindStringSubmatch(otherInfoText)
-		if len(matches) > 1 {
-			value := strings.TrimSpace(matches[1])
-			// returnableは「返品可」または「返品可能」が含まれているかで判定
-			info.Returnable = strings.Contains(value, "返品可") || strings.Contains(value, "返品可能")
-			// returnable_detailには文字列情報全体を代入
-			info.ReturnableDetail = value
-		}
-	}
-
-	return info
-}
-
-// extractDescriptionFromJSON はNext.jsのJSONデータから商品説明を抽出します
-func (s *yahooScraper) extractDescriptionFromJSON(doc *goquery.Document) string {
+// parseNextData はHTMLからNext.jsのJSONデータを抽出・パースします
+func (s *yahooScraper) parseNextData(doc *goquery.Document) (*NextData, error) {
 	scriptContent := doc.Find("script#__NEXT_DATA__").Text()
 	if scriptContent == "" {
-		return ""
+		return nil, fmt.Errorf("next data script not found")
 	}
 
-	var data struct {
-		Props struct {
-			PageProps struct {
-				InitialState struct {
-					Item struct {
-						Detail struct {
-							Item struct {
-								DescriptionHtml string `json:"descriptionHtml"`
-							} `json:"item"`
-						} `json:"detail"`
-					} `json:"item"`
-				} `json:"initialState"`
-			} `json:"pageProps"`
-		} `json:"props"`
-	}
-
+	var data NextData
 	if err := json.Unmarshal([]byte(scriptContent), &data); err != nil {
-		return ""
+		return nil, fmt.Errorf("failed to unmarshal next data: %w", err)
 	}
 
-	return data.Props.PageProps.InitialState.Item.Detail.Item.DescriptionHtml
+	return &data, nil
+}
+
+// extractItemFromJSON はNextDataからドメインモデルのItemを構築します
+func (s *yahooScraper) extractItemFromJSON(data *NextData, auctionID string) *model.Item {
+	itemData := data.Props.PageProps.InitialState.Item.Detail.Item
+
+	item := &model.Item{
+		AuctionID:   auctionID,
+		Title:       itemData.Title,
+		Description: itemData.DescriptionHtml,
+		Images:      make([]string, 0, len(itemData.Img)),
+	}
+
+	// 価格
+	if itemData.TaxinPrice > 0 {
+		item.CurrentPrice = itemData.TaxinPrice
+	} else {
+		item.CurrentPrice = itemData.Price
+	}
+
+	// 画像
+	seenURLs := make(map[string]bool)
+	for _, img := range itemData.Img {
+		if !seenURLs[img.Image] {
+			item.Images = append(item.Images, img.Image)
+			seenURLs[img.Image] = true
+		}
+	}
+
+	// ステータス
+	switch itemData.Status {
+	case "open":
+		item.Status = model.StatusActive
+	case "closed":
+		item.Status = model.StatusFinished
+	case "cancel", "canceled":
+		item.Status = model.StatusCanceled
+	default:
+		// 終了済みとみなされるケースを確認
+		// 現在時刻と比較して終了していればFinishedとするなどのロジックも検討可能だが
+		// JSONのstatusを信頼する
+		item.Status = model.StatusUnspecified
+	}
+
+	// オークション情報
+	info := &model.AuctionInformation{
+		AuctionID:        auctionID,
+		EarlyEnd:         itemData.IsEarlyClosing,
+		AutoExtension:    itemData.IsAutomaticExtension,
+		Returnable:       itemData.ItemReturnable.Allowed,
+		ReturnableDetail: itemData.ItemReturnable.Comment,
+	}
+
+	// 開始価格
+	if itemData.TaxinStartPrice > 0 {
+		info.StartPrice = itemData.TaxinStartPrice
+	} else {
+		info.StartPrice = itemData.InitPrice
+	}
+
+	// 時間パース (ISO 8601形式: "2025-12-29T16:00:10+09:00")
+	if t, err := time.Parse(time.RFC3339, itemData.StartTime); err == nil {
+		info.StartTime = t
+	}
+	if t, err := time.Parse(time.RFC3339, itemData.EndTime); err == nil {
+		info.EndTime = t
+	}
+
+	item.AuctionInfo = info
+	return item
 }
 
 // parseDateTime は日時文字列をtime.Timeに変換します
