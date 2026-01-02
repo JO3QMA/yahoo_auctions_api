@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	yahoo_auctionv1 "github.com/jo3qma/protobuf/gen/go/yahoo_auction/v1"
 	"jo3qma.com/yahoo_auctions/internal/usecase"
 )
@@ -33,11 +34,35 @@ func (h *AuctionHandler) GetAuction(
 	}
 
 	// ドメインモデルをprotobufのレスポンスに変換
-	return connect.NewResponse(&yahoo_auctionv1.GetAuctionResponse{
+	resp := &yahoo_auctionv1.GetAuctionResponse{
 		AuctionId:    item.AuctionID,
 		Title:        item.Title,
 		CurrentPrice: item.CurrentPrice,
-		ShippingFee:  item.ShippingFee,
 		Status:       yahoo_auctionv1.AuctionStatus(item.Status),
-	}), nil
+		Images:       item.Images,
+	}
+
+	// オークション情報を変換
+	if item.AuctionInfo != nil {
+		resp.AuctionInformation = &yahoo_auctionv1.AuctionInformation{
+			AuctionId:        item.AuctionInfo.AuctionID,
+			StartPrice:       item.AuctionInfo.StartPrice,
+			EarlyEnd:         item.AuctionInfo.EarlyEnd,
+			AutoExtension:    item.AuctionInfo.AutoExtension,
+			Returnable:       item.AuctionInfo.Returnable,
+			ReturnableDetail: item.AuctionInfo.ReturnableDetail,
+		}
+
+		// 開始日時を変換
+		if !item.AuctionInfo.StartTime.IsZero() {
+			resp.AuctionInformation.StartTime = timestamppb.New(item.AuctionInfo.StartTime)
+		}
+
+		// 終了日時を変換
+		if !item.AuctionInfo.EndTime.IsZero() {
+			resp.AuctionInformation.EndTime = timestamppb.New(item.AuctionInfo.EndTime)
+		}
+	}
+
+	return connect.NewResponse(resp), nil
 }
