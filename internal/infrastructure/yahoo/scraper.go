@@ -42,39 +42,10 @@ func (s *yahooScraper) FetchByID(ctx context.Context, auctionID string) (*model.
 	// オークションIDからURLを構築
 	url := fmt.Sprintf("%s/jp/auction/%s", s.baseURL, auctionID)
 
-	// HTTPリクエストの作成
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// 共通関数でHTML取得
+	doc, err := fetchHTML(ctx, s.client, url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// 一般的なブラウザに見せかけるUser-Agent（ブロッキング回避のため）
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "ja,en-US;q=0.9,en;q=0.8")
-
-	// HTTPリクエストの実行
-	res, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch page: %w", err)
-	}
-	defer func() {
-		if closeErr := res.Body.Close(); closeErr != nil {
-			// ログ出力などでエラーを記録（本番環境では構造化ログ推奨）
-			// ここではfmt.Printfを使用しているが、実際のプロダクションコードでは
-			// 適切なロガー（zap, logrus等）を使用することを推奨
-			fmt.Printf("warning: failed to close response body: %v\n", closeErr)
-		}
-	}()
-
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch page: status %d", res.StatusCode)
-	}
-
-	// goqueryでHTMLをパース
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+		return nil, err
 	}
 
 	// HTMLから商品情報を抽出

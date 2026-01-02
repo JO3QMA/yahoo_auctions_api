@@ -21,6 +21,15 @@ func (f fakeAuctionGetter) GetAuction(ctx context.Context, auctionID string) (*m
 	return f.item, f.err
 }
 
+type fakeCategoryGetter struct {
+	page *model.CategoryItemsPage
+	err  error
+}
+
+func (f fakeCategoryGetter) GetCategoryItems(ctx context.Context, categoryID string, page int64) (*model.CategoryItemsPage, error) {
+	return f.page, f.err
+}
+
 func TestAuctionHandler_GetAuction_mapsDomainToProto(t *testing.T) {
 	t.Parallel()
 
@@ -46,7 +55,7 @@ func TestAuctionHandler_GetAuction_mapsDomainToProto(t *testing.T) {
 		},
 	}
 
-	h := NewAuctionHandler(fakeAuctionGetter{item: item})
+	h := NewAuctionHandler(fakeAuctionGetter{item: item}, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.GetAuctionRequest{AuctionId: item.AuctionID})
 	resp, err := h.GetAuction(context.Background(), req)
@@ -114,7 +123,7 @@ func TestAuctionHandler_GetAuction_mapsDomainToProto(t *testing.T) {
 func TestAuctionHandler_GetAuction_returnsNotFoundOnUsecaseError(t *testing.T) {
 	t.Parallel()
 
-	h := NewAuctionHandler(fakeAuctionGetter{err: errors.New("not found")})
+	h := NewAuctionHandler(fakeAuctionGetter{err: errors.New("not found")}, nil)
 	req := connect.NewRequest(&yahoo_auctionv1.GetAuctionRequest{AuctionId: "x1234567890"})
 	_, err := h.GetAuction(context.Background(), req)
 	if err == nil {
@@ -127,5 +136,97 @@ func TestAuctionHandler_GetAuction_returnsNotFoundOnUsecaseError(t *testing.T) {
 	}
 	if ce.Code() != connect.CodeNotFound {
 		t.Fatalf("code got %v, want %v", ce.Code(), connect.CodeNotFound)
+	}
+}
+
+func TestAuctionHandler_GetCategoryItems_mapsDomainToProto(t *testing.T) {
+	t.Parallel()
+
+	itemsPage := &model.CategoryItemsPage{
+		Items: []*model.CategoryItem{
+			{
+				AuctionID:      "cat123",
+				Title:          "Category Item 1",
+				CurrentPrice:   1000,
+				ImmediatePrice: 2000,
+				BidCount:       5,
+				Image:          "https://example.com/cat1.jpg",
+			},
+			{
+				AuctionID:    "cat456",
+				Title:        "Category Item 2",
+				CurrentPrice: 500,
+				BidCount:     0,
+				Image:        "https://example.com/cat2.jpg",
+			},
+		},
+		TotalCount: 100,
+		HasNext:    true,
+	}
+
+	h := NewAuctionHandler(nil, fakeCategoryGetter{page: itemsPage})
+
+	req := connect.NewRequest(&yahoo_auctionv1.GetCategoryItemsRequest{
+		CategoryId: "2084261685",
+		Page:       0,
+	})
+
+	resp, err := h.GetCategoryItems(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Msg.TotalCount != itemsPage.TotalCount {
+		t.Fatalf("TotalCount got %d, want %d", resp.Msg.TotalCount, itemsPage.TotalCount)
+	}
+
+	if len(resp.Msg.Items) != len(itemsPage.Items) {
+		t.Fatalf("Items len got %d, want %d", len(resp.Msg.Items), len(itemsPage.Items))
+	}
+
+	// Item 1
+	if resp.Msg.Items[0].AuctionId != itemsPage.Items[0].AuctionID {
+		t.Errorf("Item[0].AuctionId got %q, want %q", resp.Msg.Items[0].AuctionId, itemsPage.Items[0].AuctionID)
+	}
+	if resp.Msg.Items[0].Title != itemsPage.Items[0].Title {
+		t.Errorf("Item[0].Title got %q, want %q", resp.Msg.Items[0].Title, itemsPage.Items[0].Title)
+	}
+	if resp.Msg.Items[0].CurrentPrice != itemsPage.Items[0].CurrentPrice {
+		t.Errorf("Item[0].CurrentPrice got %d, want %d", resp.Msg.Items[0].CurrentPrice, itemsPage.Items[0].CurrentPrice)
+	}
+	if resp.Msg.Items[0].ImmediatePrice != itemsPage.Items[0].ImmediatePrice {
+		t.Errorf("Item[0].ImmediatePrice got %d, want %d", resp.Msg.Items[0].ImmediatePrice, itemsPage.Items[0].ImmediatePrice)
+	}
+	if resp.Msg.Items[0].BidCount != itemsPage.Items[0].BidCount {
+		t.Errorf("Item[0].BidCount got %d, want %d", resp.Msg.Items[0].BidCount, itemsPage.Items[0].BidCount)
+	}
+
+	// Item 2 (ImmediatePrice 0 check)
+	if resp.Msg.Items[1].ImmediatePrice != 0 {
+		t.Errorf("Item[1].ImmediatePrice got %d, want 0", resp.Msg.Items[1].ImmediatePrice)
+	}
+}
+
+func TestAuctionHandler_GetCategoryItems_returnsErrorOnUsecaseError(t *testing.T) {
+	t.Parallel()
+
+	h := NewAuctionHandler(nil, fakeCategoryGetter{err: errors.New("internal error")})
+
+	req := connect.NewRequest(&yahoo_auctionv1.GetCategoryItemsRequest{
+		CategoryId: "2084261685",
+		Page:       0,
+	})
+
+	_, err := h.GetCategoryItems(context.Background(), req)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		t.Fatalf("expected *connect.Error, got %T: %v", err, err)
+	}
+	if ce.Code() != connect.CodeInternal {
+		t.Fatalf("code got %v, want %v", ce.Code(), connect.CodeInternal)
 	}
 }

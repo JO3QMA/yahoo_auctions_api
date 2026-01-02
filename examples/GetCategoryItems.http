@@ -1,0 +1,11 @@
+### GetCategoryItems - ヤフオクのカテゴリ商品情報を取得
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/GetCategoryItems
+Content-Type: application/json
+Accept: application/json
+
+{
+  "category_id": "2084049588",
+  "page": 0
+}
+
+###
