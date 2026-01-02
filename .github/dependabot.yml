@@ -1,0 +1,53 @@
+version: 2
+updates:
+  # Go Modules の依存関係を監視
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    reviewers:
+      - "jo3qma"
+    assignees:
+      - "jo3qma"
+    # セキュリティアップデートを優先
+    groups:
+      security-updates:
+        applies-to: security-updates
+        update-types:
+          - "minor"
+          - "patch"
+      protobuf-updates:
+        patterns:
+          - "google.golang.org/protobuf"
+          - "github.com/jo3qma/protobuf/*"
+      connect-updates:
+        patterns:
+          - "connectrpc.com/connect"
+      goquery-updates:
+        patterns:
+          - "github.com/PuerkitoBio/goquery"
+
+  # GitHub Actions のワークフローを監視（将来的な使用のため）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "github-actions"
+      - "automated"
