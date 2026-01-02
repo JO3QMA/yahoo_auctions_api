@@ -1,0 +1,22 @@
+### GetAuction - ヤフオクのオークション情報を取得
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/GetAuction
+Content-Type: application/json
+Accept: application/json
+
+{
+  "auction_id": "f1206019530"
+}
+
+###
+
+### GetAuction - JSON形式でリクエスト（別のURL例）
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/GetAuction
+Content-Type: application/json
+Accept: application/json
+
+{
+  "auction_id": "example789012"
+}
+
+###
+
