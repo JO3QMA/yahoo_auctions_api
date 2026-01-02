@@ -8,7 +8,7 @@ require (
 	connectrpc.com/connect v1.19.1
 	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/jo3qma/protobuf/gen/go v0.0.0-20251211152214-0b3d5de63648
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
