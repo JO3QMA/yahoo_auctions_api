@@ -2,6 +2,7 @@ package yahoo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -163,6 +164,17 @@ func (s *yahooScraper) extractItemInfo(doc *goquery.Document, auctionID string) 
 
 	// 商品画像URL取得
 	item.Images = s.extractImageURLs(doc)
+
+	// 商品説明取得
+	// まずNext.jsのデータ（JSON）から取得を試みる
+	description := s.extractDescriptionFromJSON(doc)
+	if description == "" {
+		// フォールバック: div#description配下のsection直下のdivの中身を取得
+		var htmlContent string
+		htmlContent, _ = doc.Find("#description section > div").Html()
+		description = strings.TrimSpace(htmlContent)
+	}
+	item.Description = description
 
 	// オークション状態の判定
 	// より正確な判定のため、特定のキーワードとHTML要素を確認
@@ -458,6 +470,36 @@ func (s *yahooScraper) extractAuctionInformation(doc *goquery.Document, auctionI
 	}
 
 	return info
+}
+
+// extractDescriptionFromJSON はNext.jsのJSONデータから商品説明を抽出します
+func (s *yahooScraper) extractDescriptionFromJSON(doc *goquery.Document) string {
+	scriptContent := doc.Find("script#__NEXT_DATA__").Text()
+	if scriptContent == "" {
+		return ""
+	}
+
+	var data struct {
+		Props struct {
+			PageProps struct {
+				InitialState struct {
+					Item struct {
+						Detail struct {
+							Item struct {
+								DescriptionHtml string `json:"descriptionHtml"`
+							} `json:"item"`
+						} `json:"detail"`
+					} `json:"item"`
+				} `json:"initialState"`
+			} `json:"pageProps"`
+		} `json:"props"`
+	}
+
+	if err := json.Unmarshal([]byte(scriptContent), &data); err != nil {
+		return ""
+	}
+
+	return data.Props.PageProps.InitialState.Item.Detail.Item.DescriptionHtml
 }
 
 // parseDateTime は日時文字列をtime.Timeに変換します

@@ -12,6 +12,7 @@ type Item struct {
 	Status       Status              // オークションの状態
 	Images       []string            // 商品画像のURLリスト
 	AuctionInfo  *AuctionInformation // オークション情報
+	Description  string              // 商品説明（HTML）
 }
 
 // AuctionInformation はオークションの詳細情報を表します

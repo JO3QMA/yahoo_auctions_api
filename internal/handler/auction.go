@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	yahoo_auctionv1 "github.com/jo3qma/protobuf/gen/go/yahoo_auction/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"jo3qma.com/yahoo_auctions/internal/usecase"
 )
 
@@ -40,6 +40,7 @@ func (h *AuctionHandler) GetAuction(
 		CurrentPrice: item.CurrentPrice,
 		Status:       yahoo_auctionv1.AuctionStatus(item.Status),
 		Images:       item.Images,
+		Description:  item.Description,
 	}
 
 	// オークション情報を変換
