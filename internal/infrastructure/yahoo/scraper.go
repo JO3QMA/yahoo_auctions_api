@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -206,91 +203,4 @@ func (s *yahooScraper) extractItemFromJSON(data *NextData, auctionID string) *mo
 
 	item.AuctionInfo = info
 	return item
-}
-
-// parseDateTime は日時文字列をtime.Timeに変換します
-// 例: "2025年12月29日（月）16時0分" -> time.Time
-func parseDateTime(text string) (time.Time, error) {
-	if text == "" {
-		return time.Time{}, fmt.Errorf("empty date string")
-	}
-
-	// 「（月）」などの曜日表記を除去
-	text = regexp.MustCompile(`\s*\([^)]+\)\s*`).ReplaceAllString(text, " ")
-
-	// 複数の日時形式を試行
-	formats := []string{
-		"2006年1月2日 15時4分",
-		"2006年01月02日 15時04分",
-		"2006年1月2日15時4分",
-		"2006年01月02日15時04分",
-		"2006年1月2日 15:04",
-		"2006年01月02日 15:04",
-	}
-
-	for _, format := range formats {
-		if t, err := time.Parse(format, text); err == nil {
-			return t, nil
-		}
-	}
-
-	// 正規表現で抽出してからパース
-	datePattern := regexp.MustCompile(`(\d{4})年(\d{1,2})月(\d{1,2})日[^\d]*(\d{1,2})時(\d{1,2})分`)
-	matches := datePattern.FindStringSubmatch(text)
-	if len(matches) == 6 {
-		year := matches[1]
-		month := matches[2]
-		day := matches[3]
-		hour := matches[4]
-		minute := matches[5]
-
-		// ゼロパディング
-		if len(month) == 1 {
-			month = "0" + month
-		}
-		if len(day) == 1 {
-			day = "0" + day
-		}
-		if len(hour) == 1 {
-			hour = "0" + hour
-		}
-		if len(minute) == 1 {
-			minute = "0" + minute
-		}
-
-		dateStr := fmt.Sprintf("%s-%s-%s %s:%s:00", year, month, day, hour, minute)
-		if t, err := time.Parse("2006-01-02 15:04:05", dateStr); err == nil {
-			return t, nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("failed to parse date: %s", text)
-}
-
-// parsePrice は価格文字列から数値を抽出します
-// 例: "1,000円" -> 1000, "送料無料" -> 0
-func parsePrice(text string) int64 {
-	if text == "" {
-		return 0
-	}
-
-	// 「無料」「送料無料」などの文字列をチェック
-	lowerText := strings.ToLower(text)
-	if strings.Contains(lowerText, "無料") || strings.Contains(lowerText, "free") {
-		return 0
-	}
-
-	// 数字とカンマのみを抽出
-	re := regexp.MustCompile(`([0-9,]+)`)
-	matches := re.FindStringSubmatch(text)
-	if len(matches) > 1 {
-		// カンマを除去
-		priceStr := strings.ReplaceAll(matches[1], ",", "")
-		price, err := strconv.ParseInt(priceStr, 10, 64)
-		if err == nil {
-			return price
-		}
-	}
-
-	return 0
 }
