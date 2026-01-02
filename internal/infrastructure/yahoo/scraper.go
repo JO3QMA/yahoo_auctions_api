@@ -96,16 +96,56 @@ func (s *yahooScraper) extractItemInfo(doc *goquery.Document, auctionID string) 
 	}
 
 	// 現在価格取得
-	priceText := strings.TrimSpace(doc.Find(".Price__value, .yaPrice, .price").First().Text())
+	// 複数のセレクタを試行
+	priceText := strings.TrimSpace(doc.Find(".Price__value, .yaPrice, .price, [class*='Price'], [class*='price']").First().Text())
+
+	// フォールバック: ページ全体から正規表現で「現在」の後に続く価格を直接抽出
 	if priceText == "" {
-		// フォールバック: 価格を含む可能性のあるテキストを検索
+		pageText := doc.Text()
+		// 「現在」の後に続く価格パターンを抽出（例: "現在 22,000円（税込）"）
+		pricePattern := regexp.MustCompile(`現在\s*([0-9,]+)\s*円`)
+		matches := pricePattern.FindStringSubmatch(pageText)
+		if len(matches) > 1 {
+			priceText = matches[0] // マッチした全体の文字列を使用
+		}
+	}
+
+	// さらにフォールバック: 「現在」と「円」を含むテキストを検索
+	if priceText == "" {
+		var foundPriceText string
 		doc.Find("*").Each(func(i int, s *goquery.Selection) {
-			text := s.Text()
-			if strings.Contains(text, "円") && strings.Contains(text, "現在価格") {
-				priceText = text
+			if foundPriceText != "" {
+				return // 既に見つかった場合は終了
+			}
+			text := strings.TrimSpace(s.Text())
+			// 「現在」と「円」を含み、数字も含むテキストを探す
+			if strings.Contains(text, "現在") && strings.Contains(text, "円") {
+				// 数字が含まれているか確認
+				if regexp.MustCompile(`\d`).MatchString(text) {
+					foundPriceText = text
+				}
 			}
 		})
+		if foundPriceText != "" {
+			priceText = foundPriceText
+		}
 	}
+
+	// 最後のフォールバック: ページ全体から「現在」と「円」を含む行を検索
+	if priceText == "" {
+		pageText := doc.Text()
+		lines := strings.Split(pageText, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, "現在") && strings.Contains(line, "円") {
+				if regexp.MustCompile(`\d`).MatchString(line) {
+					priceText = line
+					break
+				}
+			}
+		}
+	}
+
 	item.CurrentPrice = parsePrice(priceText)
 
 	// 送料取得
