@@ -16,22 +16,31 @@ import (
 // 腐敗防止層（Anti-Corruption Layer）として、外部システムの不安定な構造を
 // ドメインモデルに変換する責務を持ちます
 type yahooScraper struct {
-	client *http.Client
+	client  *http.Client
+	baseURL string
 }
 
 // NewYahooScraper は新しいYahooScraperインスタンスを作成します
 func NewYahooScraper() repository.ItemRepository {
+	return newYahooScraper(
+		&http.Client{Timeout: 30 * time.Second},
+		"https://page.auctions.yahoo.co.jp",
+	)
+}
+
+// newYahooScraper はテスト容易性のための内部コンストラクタです。
+// 本番コードは NewYahooScraper を利用し、テストでは http.Client/baseURL を注入します。
+func newYahooScraper(client *http.Client, baseURL string) repository.ItemRepository {
 	return &yahooScraper{
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:  client,
+		baseURL: baseURL,
 	}
 }
 
 // FetchByID は指定されたオークションIDから商品情報を取得します
 func (s *yahooScraper) FetchByID(ctx context.Context, auctionID string) (*model.Item, error) {
 	// オークションIDからURLを構築
-	url := fmt.Sprintf("https://page.auctions.yahoo.co.jp/jp/auction/%s", auctionID)
+	url := fmt.Sprintf("%s/jp/auction/%s", s.baseURL, auctionID)
 
 	// HTTPリクエストの作成
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -49,7 +58,14 @@ func (s *yahooScraper) FetchByID(ctx context.Context, auctionID string) (*model.
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch page: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if closeErr := res.Body.Close(); closeErr != nil {
+			// ログ出力などでエラーを記録（本番環境では構造化ログ推奨）
+			// ここではfmt.Printfを使用しているが、実際のプロダクションコードでは
+			// 適切なロガー（zap, logrus等）を使用することを推奨
+			fmt.Printf("warning: failed to close response body: %v\n", closeErr)
+		}
+	}()
 
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch page: status %d", res.StatusCode)

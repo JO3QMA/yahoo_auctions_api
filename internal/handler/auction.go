@@ -6,17 +6,23 @@ import (
 	"connectrpc.com/connect"
 	yahoo_auctionv1 "github.com/jo3qma/protobuf/gen/go/yahoo_auction/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"jo3qma.com/yahoo_auctions/internal/usecase"
+	"jo3qma.com/yahoo_auctions/internal/domain/model"
 )
+
+// AuctionGetter はオークション取得ユースケースの最小インターフェースです。
+// handler層は具象（usecase.AuctionUsecase）に依存せず、境界変換に集中します。
+type AuctionGetter interface {
+	GetAuction(ctx context.Context, auctionID string) (*model.Item, error)
+}
 
 // AuctionHandler はgRPC/Connectのハンドラー実装です
 // プロトコル層（protobuf）とドメイン層（usecase）を橋渡しします
 type AuctionHandler struct {
-	uc *usecase.AuctionUsecase
+	uc AuctionGetter
 }
 
 // NewAuctionHandler は新しいAuctionHandlerインスタンスを作成します
-func NewAuctionHandler(uc *usecase.AuctionUsecase) *AuctionHandler {
+func NewAuctionHandler(uc AuctionGetter) *AuctionHandler {
 	return &AuctionHandler{
 		uc: uc,
 	}
