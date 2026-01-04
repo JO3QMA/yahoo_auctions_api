@@ -205,6 +205,9 @@ func TestAuctionHandler_GetCategoryItems_mapsDomainToProto(t *testing.T) {
 	if resp.Msg.Items[1].ImmediatePrice != 0 {
 		t.Errorf("Item[1].ImmediatePrice got %d, want 0", resp.Msg.Items[1].ImmediatePrice)
 	}
+	if resp.Msg.Items[1].Image != itemsPage.Items[1].Image {
+		t.Errorf("Item[1].Image got %q, want %q", resp.Msg.Items[1].Image, itemsPage.Items[1].Image)
+	}
 }
 
 func TestAuctionHandler_GetCategoryItems_returnsErrorOnUsecaseError(t *testing.T) {
