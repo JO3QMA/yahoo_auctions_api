@@ -9,6 +9,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
+replace github.com/jo3qma/protobuf/gen/go => ../protobuf/gen/go
+
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect

@@ -93,30 +93,17 @@ func (h *AuctionHandler) GetCategoryItems(
 	}
 
 	// protoへの変換
-	items := make([]*yahoo_auctionv1.GetCategoryItemsResponse_Item, 0, len(pageResult.Items))
-	for _, item := range pageResult.Items {
-		items = append(items, &yahoo_auctionv1.GetCategoryItemsResponse_Item{
-			AuctionId:      item.AuctionID,
-			Title:          item.Title,
-			CurrentPrice:   item.CurrentPrice,
-			ImmediatePrice: item.ImmediatePrice,
-			BidCount:       item.BidCount,
-			// Image は proto 定義にないかもしれないので確認が必要だが、
-			// 既存の proto を見る限り GetCategoryItemsResponse_Item に Image フィールドは定義されていない。
-			// GetAuctionResponse には Images があるが、CategoryItem には Image (single) がある。
-			// proto定義を確認すると:
-			/*
-			  message Item {
-			    string auction_id = 1;
-			    string title = 2;
-			    int64 current_price = 3;
-			    int64 immediate_price = 4;
-			    int64 bid_count = 6;
-			  }
-			*/
-			// なので Image は含めない（またはproto修正が必要だが、今回はプランに含まれていないので従う）
-		})
-	}
+		items := make([]*yahoo_auctionv1.GetCategoryItemsResponse_Item, 0, len(pageResult.Items))
+		for _, item := range pageResult.Items {
+			items = append(items, &yahoo_auctionv1.GetCategoryItemsResponse_Item{
+				AuctionId:      item.AuctionID,
+				Title:          item.Title,
+				CurrentPrice:   item.CurrentPrice,
+				ImmediatePrice: item.ImmediatePrice,
+				Image:          item.Image,
+				BidCount:       item.BidCount,
+			})
+		}
 
 	resp := &yahoo_auctionv1.GetCategoryItemsResponse{
 		Items:      items,
