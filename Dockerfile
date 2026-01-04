@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
     -o yahoo-auctions-server \
-    ./cmd/server
+    ./cmd/server/main.go
 
 # Runtime stage
 FROM gcr.io/distroless/base:latest
