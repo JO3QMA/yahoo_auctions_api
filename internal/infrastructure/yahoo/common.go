@@ -56,7 +56,10 @@ func parsePrice(s string) int64 {
 	}
 	// 結合してパース
 	valStr := strings.Join(matches, "")
-	val, _ := strconv.ParseInt(valStr, 10, 64)
+	val, err := strconv.ParseInt(valStr, 10, 64)
+	if err != nil {
+		return 0
+	}
 	return val
 }
 

@@ -113,8 +113,14 @@ func TestYahooScraper_extractItemFromJSON_mapsFields(t *testing.T) {
 		t.Fatalf("AuctionInfo.ReturnableDetail got %q, want %q", got.AuctionInfo.ReturnableDetail, "detail")
 	}
 
-	wantStart, _ := time.Parse(time.RFC3339, "2025-12-29T16:00:10+09:00")
-	wantEnd, _ := time.Parse(time.RFC3339, "2025-12-30T16:00:10+09:00")
+	wantStart, err := time.Parse(time.RFC3339, "2025-12-29T16:00:10+09:00")
+	if err != nil {
+		t.Fatalf("failed to parse start time: %v", err)
+	}
+	wantEnd, err := time.Parse(time.RFC3339, "2025-12-30T16:00:10+09:00")
+	if err != nil {
+		t.Fatalf("failed to parse end time: %v", err)
+	}
 	if got.AuctionInfo.StartTime != wantStart {
 		t.Fatalf("AuctionInfo.StartTime got %v, want %v", got.AuctionInfo.StartTime, wantStart)
 	}
