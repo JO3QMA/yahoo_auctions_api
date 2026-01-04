@@ -1,3 +1,4 @@
+version: "2"
 run:
   timeout: 5m
   go: '1.25'
@@ -10,8 +11,7 @@ linters:
     - misspell
     - staticcheck
     - unused
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
