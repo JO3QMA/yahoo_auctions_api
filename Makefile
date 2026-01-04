@@ -24,9 +24,11 @@ lint:
 	@if command -v $(GOLANGCI_LINT) > /dev/null; then \
 		$(GOLANGCI_LINT) run; \
 	else \
-		echo "⚠️  golangci-lint not found. Running go vet and go fmt instead..."; \
-		$(GO) vet ./...; \
-		$(GO) fmt ./...; \
+		echo "❌ golangci-lint not found."; \
+		echo "   Please install it to run the same checks as CI:"; \
+		echo "   go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "   Or using brew (macOS): brew install golangci-lint"; \
+		exit 1; \
 	fi
 
 # Formatter実行
