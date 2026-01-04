@@ -15,6 +15,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+# Debug: Check directory structure
+RUN ls -la /app && ls -la /app/cmd && ls -la /app/cmd/server || true
+
 # Build the binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
