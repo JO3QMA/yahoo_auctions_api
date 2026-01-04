@@ -93,17 +93,17 @@ func (h *AuctionHandler) GetCategoryItems(
 	}
 
 	// protoへの変換
-		items := make([]*yahoo_auctionv1.GetCategoryItemsResponse_Item, 0, len(pageResult.Items))
-		for _, item := range pageResult.Items {
-			items = append(items, &yahoo_auctionv1.GetCategoryItemsResponse_Item{
-				AuctionId:      item.AuctionID,
-				Title:          item.Title,
-				CurrentPrice:   item.CurrentPrice,
-				ImmediatePrice: item.ImmediatePrice,
-				Image:          item.Image,
-				BidCount:       item.BidCount,
-			})
-		}
+	items := make([]*yahoo_auctionv1.GetCategoryItemsResponse_Item, 0, len(pageResult.Items))
+	for _, item := range pageResult.Items {
+		items = append(items, &yahoo_auctionv1.GetCategoryItemsResponse_Item{
+			AuctionId:      item.AuctionID,
+			Title:          item.Title,
+			CurrentPrice:   item.CurrentPrice,
+			ImmediatePrice: item.ImmediatePrice,
+			Image:          item.Image,
+			BidCount:       item.BidCount,
+		})
+	}
 
 	resp := &yahoo_auctionv1.GetCategoryItemsResponse{
 		Items:      items,
