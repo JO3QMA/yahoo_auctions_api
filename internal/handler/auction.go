@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 
 	"connectrpc.com/connect"
 	yahoo_auctionv1 "github.com/jo3qma/protobuf/gen/go/yahoo_auction/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"jo3qma.com/yahoo_auctions/internal/domain/model"
+	"jo3qma.com/yahoo_auctions/internal/infrastructure/yahoo"
 )
 
 // AuctionGetter はオークション取得ユースケースの最小インターフェースです。
@@ -20,19 +22,35 @@ type CategoryGetter interface {
 	GetCategoryItems(ctx context.Context, categoryID string, page int64) (*model.CategoryItemsPage, error)
 }
 
+// SearchGetter は検索ユースケースの最小インターフェースです。
+type SearchGetter interface {
+	Search(ctx context.Context, query string, page int64) (*model.CategoryItemsPage, error)
+}
+
 // AuctionHandler はgRPC/Connectのハンドラー実装です
 // プロトコル層（protobuf）とドメイン層（usecase）を橋渡しします
 type AuctionHandler struct {
-	uc    AuctionGetter
-	catUC CategoryGetter
+	uc       AuctionGetter
+	catUC    CategoryGetter
+	searchUC SearchGetter
 }
 
 // NewAuctionHandler は新しいAuctionHandlerインスタンスを作成します
-func NewAuctionHandler(uc AuctionGetter, catUC CategoryGetter) *AuctionHandler {
+func NewAuctionHandler(uc AuctionGetter, catUC CategoryGetter, searchUC SearchGetter) *AuctionHandler {
 	return &AuctionHandler{
-		uc:    uc,
-		catUC: catUC,
+		uc:       uc,
+		catUC:    catUC,
+		searchUC: searchUC,
 	}
+}
+
+// upstreamErrorToConnectCode はアップストリームのHTTPステータスに応じてConnectのエラーコードを返します。
+func upstreamErrorToConnectCode(err error) connect.Code {
+	var ue *yahoo.UpstreamError
+	if errors.As(err, &ue) && ue.StatusCode == 404 {
+		return connect.CodeNotFound
+	}
+	return connect.CodeInternal
 }
 
 // GetAuction はオークション商品情報を取得するRPCハンドラーです
@@ -43,7 +61,7 @@ func (h *AuctionHandler) GetAuction(
 	// ユースケースを呼び出して商品情報を取得
 	item, err := h.uc.GetAuction(ctx, req.Msg.AuctionId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(upstreamErrorToConnectCode(err), err)
 	}
 
 	// ドメインモデルをprotobufのレスポンスに変換
@@ -89,7 +107,7 @@ func (h *AuctionHandler) GetCategoryItems(
 	// ユースケースを呼び出して一覧を取得
 	pageResult, err := h.catUC.GetCategoryItems(ctx, req.Msg.CategoryId, req.Msg.Page)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(upstreamErrorToConnectCode(err), err)
 	}
 
 	// protoへの変換
@@ -106,6 +124,44 @@ func (h *AuctionHandler) GetCategoryItems(
 	}
 
 	resp := &yahoo_auctionv1.GetCategoryItemsResponse{
+		Items:      items,
+		TotalCount: pageResult.TotalCount,
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// SearchAuctions はキーワード検索で商品一覧を取得するRPCハンドラーです（新着順）
+func (h *AuctionHandler) SearchAuctions(
+	ctx context.Context,
+	req *connect.Request[yahoo_auctionv1.SearchAuctionsRequest],
+) (*connect.Response[yahoo_auctionv1.SearchAuctionsResponse], error) {
+	pageResult, err := h.searchUC.Search(ctx, req.Msg.Query, req.Msg.Page)
+	if err != nil {
+		var ue *yahoo.UpstreamError
+		if errors.As(err, &ue) && ue.StatusCode == 404 {
+			// ヤフオクは「一致する商品はありません」のときに404を返す。検索0件として200で空結果を返す。
+			return connect.NewResponse(&yahoo_auctionv1.SearchAuctionsResponse{
+				Items:      []*yahoo_auctionv1.SearchAuctionsResponse_Item{},
+				TotalCount: 0,
+			}), nil
+		}
+		return nil, connect.NewError(upstreamErrorToConnectCode(err), err)
+	}
+
+	items := make([]*yahoo_auctionv1.SearchAuctionsResponse_Item, 0, len(pageResult.Items))
+	for _, item := range pageResult.Items {
+		items = append(items, &yahoo_auctionv1.SearchAuctionsResponse_Item{
+			AuctionId:      item.AuctionID,
+			Title:          item.Title,
+			CurrentPrice:   item.CurrentPrice,
+			ImmediatePrice: item.ImmediatePrice,
+			Image:          item.Image,
+			BidCount:       item.BidCount,
+		})
+	}
+
+	resp := &yahoo_auctionv1.SearchAuctionsResponse{
 		Items:      items,
 		TotalCount: pageResult.TotalCount,
 	}

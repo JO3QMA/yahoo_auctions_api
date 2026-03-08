@@ -6,10 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"jo3qma.com/yahoo_auctions/internal/domain/model"
 	"jo3qma.com/yahoo_auctions/internal/domain/repository"
 )
@@ -60,67 +58,6 @@ func (s *yahooCategoryScraper) FetchByCategory(ctx context.Context, categoryID s
 		return nil, err
 	}
 
-	// パース
-	return s.extractCategoryItems(doc)
-}
-
-func (s *yahooCategoryScraper) extractCategoryItems(doc *goquery.Document) (*model.CategoryItemsPage, error) {
-	var items []*model.CategoryItem
-
-	// 商品一覧: div.Products__list ul.Products__items li.Product
-	doc.Find("div.Products__list ul.Products__items li.Product").Each(func(i int, s *goquery.Selection) {
-		item := &model.CategoryItem{}
-
-		// タイトル: h3.Product__title a.Product__titleLink
-		titleLink := s.Find("h3.Product__title a.Product__titleLink")
-		item.Title = strings.TrimSpace(titleLink.Text())
-
-		// オークションID: a.Product__titleLink (data-auction-id)
-		if id, exists := titleLink.Attr("data-auction-id"); exists {
-			item.AuctionID = id
-		}
-
-		// 画像: div.Products__list ul.Products__items li.Product img.Product__imageData
-		// src属性を取得。遅延ロードなどで src がダミーの場合、data-src 等を見る必要があるかもしれないが、
-		// @Untitled-1 の指定通りまずは普通に取得する。
-		// img.Product__imageData
-		img := s.Find("img.Product__imageData")
-		if src, exists := img.Attr("src"); exists {
-			item.Image = src
-		} else if src, exists := img.Attr("data-src"); exists {
-			// fallback
-			item.Image = src
-		}
-
-		// 価格情報: div.Product__priceInfo
-		priceInfo := s.Find("div.Product__priceInfo")
-
-		// 現在の価格: span.Product__price (1つ目)
-		currentPriceEl := priceInfo.Find("span.Product__price").First().Find("span.Product__priceValue")
-		item.CurrentPrice = parsePrice(currentPriceEl.Text())
-
-		// 即決価格: span.Product__price (2つ目)
-		// 存在しない場合もある
-		prices := priceInfo.Find("span.Product__price")
-		if prices.Length() > 1 {
-			immediatePriceEl := prices.Eq(1).Find("span.Product__priceValue")
-			item.ImmediatePrice = parsePrice(immediatePriceEl.Text())
-		}
-
-		// 入札数: dd.Product__bid
-		bidEl := s.Find("dd.Product__bid")
-		item.BidCount = parseCount(bidEl.Text())
-
-		items = append(items, item)
-	})
-
-	// 商品の総数: div.Result__header > div.SearchMode > div.Tab > ul > li.Tab__item.Tab__item--current > div > span.Tab__subText
-	totalCountStr := doc.Find("div.Result__header div.SearchMode div.Tab ul li.Tab__item--current div span.Tab__subText").Text()
-	totalCount := parseCount(totalCountStr)
-
-	return &model.CategoryItemsPage{
-		Items:      items,
-		TotalCount: totalCount,
-		HasNext:    len(items) >= 50, // 簡易判定
-	}, nil
+	// パース（共通のExtractProductListを使用）
+	return ExtractProductList(doc)
 }

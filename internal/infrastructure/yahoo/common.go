@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"jo3qma.com/yahoo_auctions/internal/domain/model"
 )
 
 // fetchHTML は指定されたURLからHTMLを取得してgoquery.Documentを返します
@@ -35,7 +36,7 @@ func fetchHTML(ctx context.Context, client *http.Client, url string) (*goquery.D
 	}()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch page: status %d", res.StatusCode)
+		return nil, fmt.Errorf("failed to fetch page: status %d: %w", res.StatusCode, &UpstreamError{StatusCode: res.StatusCode})
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
@@ -66,4 +67,60 @@ func parsePrice(s string) int64 {
 // parseCount は "1,000件" などの文字列から数値を抽出します
 func parseCount(s string) int64 {
 	return parsePrice(s) // 実装は同じでOK
+}
+
+// ExtractProductList は商品一覧ページのHTMLから商品リストを抽出します。
+// カテゴリ一覧・検索結果の両方で同じDOM構造（div.Products__list ul.Products__items li.Product）を前提とします。
+func ExtractProductList(doc *goquery.Document) (*model.CategoryItemsPage, error) {
+	var items []*model.CategoryItem
+
+	// 商品一覧: div.Products__list ul.Products__items li.Product
+	doc.Find("div.Products__list ul.Products__items li.Product").Each(func(i int, sel *goquery.Selection) {
+		item := &model.CategoryItem{}
+
+		// タイトル: h3.Product__title a.Product__titleLink
+		titleLink := sel.Find("h3.Product__title a.Product__titleLink")
+		item.Title = strings.TrimSpace(titleLink.Text())
+
+		// オークションID: a.Product__titleLink (data-auction-id)
+		if id, exists := titleLink.Attr("data-auction-id"); exists {
+			item.AuctionID = id
+		}
+
+		// 画像: img.Product__imageData
+		img := sel.Find("img.Product__imageData")
+		if src, exists := img.Attr("src"); exists {
+			item.Image = src
+		} else if src, exists := img.Attr("data-src"); exists {
+			item.Image = src
+		}
+
+		// 価格情報: div.Product__priceInfo
+		priceInfo := sel.Find("div.Product__priceInfo")
+		currentPriceEl := priceInfo.Find("span.Product__price").First().Find("span.Product__priceValue")
+		item.CurrentPrice = parsePrice(currentPriceEl.Text())
+
+		// 即決価格: span.Product__price (2つ目)
+		prices := priceInfo.Find("span.Product__price")
+		if prices.Length() > 1 {
+			immediatePriceEl := prices.Eq(1).Find("span.Product__priceValue")
+			item.ImmediatePrice = parsePrice(immediatePriceEl.Text())
+		}
+
+		// 入札数: dd.Product__bid
+		bidEl := sel.Find("dd.Product__bid")
+		item.BidCount = parseCount(bidEl.Text())
+
+		items = append(items, item)
+	})
+
+	// 商品の総数: div.Result__header div.SearchMode div.Tab ul li.Tab__item--current div span.Tab__subText
+	totalCountStr := doc.Find("div.Result__header div.SearchMode div.Tab ul li.Tab__item--current div span.Tab__subText").Text()
+	totalCount := parseCount(totalCountStr)
+
+	return &model.CategoryItemsPage{
+		Items:      items,
+		TotalCount: totalCount,
+		HasNext:    len(items) >= 50,
+	}, nil
 }
