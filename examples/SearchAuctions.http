@@ -1,0 +1,35 @@
+### SearchAuctions - ヤフオクのキーワード検索で商品一覧を取得（新着順）
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/SearchAuctions
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "ML30 Gen10",
+  "page": 0
+}
+
+###
+
+### SearchAuctions - 2ページ目を取得
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/SearchAuctions
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "ML30 Gen10",
+  "page": 1
+}
+
+###
+
+### SearchAuctions - 2ページ目を取得
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/SearchAuctions
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "Dell H330 IT mode",
+  "page": 0
+}
+
+###
