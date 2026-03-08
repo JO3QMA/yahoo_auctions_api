@@ -21,11 +21,13 @@ func main() {
 	// DBの代わりにScraperを注入することで、腐敗防止層のパターンを実現
 	auctionScraper := yahoo.NewYahooScraper()          // repository.ItemRepository
 	categoryScraper := yahoo.NewYahooCategoryScraper() // repository.CategoryItemRepository
+	searchScraper := yahoo.NewYahooSearchScraper()     // repository.SearchItemRepository
 
 	uc := usecase.NewAuctionUsecase(auctionScraper)
 	catUC := usecase.NewCategoryUsecase(categoryScraper)
+	searchUC := usecase.NewSearchUsecase(searchScraper)
 
-	h := handler.NewAuctionHandler(uc, catUC)
+	h := handler.NewAuctionHandler(uc, catUC, searchUC)
 
 	// Connectハンドラーの登録
 	mux := http.NewServeMux()
