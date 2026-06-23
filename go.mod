@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/PuerkitoBio/goquery v1.12.0
-	github.com/jo3qma/protobuf/gen/go v0.1.1
+	github.com/jo3qma/protobuf/gen/go v0.1.2
 	google.golang.org/protobuf v1.36.11
 )
 

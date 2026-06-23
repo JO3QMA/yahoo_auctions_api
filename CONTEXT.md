@@ -75,3 +75,39 @@ _Avoid_: Offset, ページ番号（1 始まり）
 **Total count**:
 Search または Category browse に一致する Auction の総数（Yahoo Auctions が報告する件数）。
 _Avoid_: TotalCount, 件数, ヒット数
+
+**Sold search**:
+終了分検索（closedsearch）によって得られる、落札済み Auction の List view。Search や Category browse とは別系統の取得方法。
+_Avoid_: Closed search, 終了分, 落札相場検索
+
+**Winning price**:
+Sold search の List view で示される落札価格（送料別、単位：円）。入札があった Auction の Current price 相当。
+_Avoid_: Sold price, Final price, 落札価格, 落札額
+
+**Comparable**:
+MarketEstimate 算出に使う Sold search 結果の1件。リクエストの Category と検索キーワードに一致する Auction。
+_Avoid_: Comp, 類似商品, 相場データ
+
+**Comparable search keyword**:
+Sold search に渡すキーワード文字列。呼び出し元が Product の IdentityField から導出した value をそのまま使う（例: `GTX 1080`）。API は key を検索には使わない。
+_Avoid_: Query, Search term, IdentityField value
+
+**Comparable record**:
+`SearchComparables` のレスポンスで返す1件の表現。Auction ID・タイトル・Winning price・終了日時を含む Sold search 結果の要約。
+_Avoid_: Sold item, 落札レコード
+
+**Lookback period**:
+Comparable 検索で対象とする落札の遡及日数。リクエストの `lookback_days` で指定し、未指定時は 90 日。
+_Avoid_: Reference period, 参照期間, 検索期間
+
+**Comparable search depth**:
+Sold search を遡って取得するページ数の上限。初版は最大 3 ページ（150 件）。Lookback period 外の結果は `ended_at` で除外する。
+_Avoid_: Max results, 取得件数上限
+
+**SearchComparables**:
+Category と Comparable search keyword を指定して Sold search から Comparable を取得する RPC。`YahooAuctionService` が提供する。
+_Avoid_: SearchSoldComparables, GetComparables, 相場検索API
+
+**Empty Comparable result**:
+Lookback period 内に一致する Comparable が 0 件のときの正常応答。`200 OK`・空の `comparables`・`count = 0` を返し、Bot は Gemini フォールバックへ進める。
+_Avoid_: Not found, 404, エラー扱い

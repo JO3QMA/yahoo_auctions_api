@@ -22,12 +22,14 @@ func main() {
 	auctionScraper := yahoo.NewYahooScraper()          // repository.ItemRepository
 	categoryScraper := yahoo.NewYahooCategoryScraper() // repository.CategoryItemRepository
 	searchScraper := yahoo.NewYahooSearchScraper()     // repository.SearchItemRepository
+	comparableScraper := yahoo.NewYahooComparableScraper()
 
 	uc := usecase.NewAuctionUsecase(auctionScraper)
 	catUC := usecase.NewCategoryUsecase(categoryScraper)
 	searchUC := usecase.NewSearchUsecase(searchScraper)
+	comparableUC := usecase.NewComparableUsecase(comparableScraper)
 
-	h := handler.NewAuctionHandler(uc, catUC, searchUC)
+	h := handler.NewAuctionHandler(uc, catUC, searchUC, comparableUC)
 
 	// Connectハンドラーの登録
 	mux := http.NewServeMux()

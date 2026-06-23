@@ -1,0 +1,10 @@
+### SearchComparables
+POST http://localhost:8080/yahoo_auction.v1.YahooAuctionService/SearchComparables
+Content-Type: application/json
+
+{
+  "categoryId": "2084040405",
+  "identityFieldKey": "model",
+  "identityFieldValue": "GTX 1080",
+  "lookbackDays": 90
+}

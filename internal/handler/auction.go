@@ -27,20 +27,27 @@ type SearchGetter interface {
 	Search(ctx context.Context, query string, page int64) (*model.CategoryItemsPage, error)
 }
 
+// ComparableGetter は Comparable 検索ユースケースの最小インターフェースです。
+type ComparableGetter interface {
+	SearchComparables(ctx context.Context, categoryID, keyword string, lookbackDays *int32) (*model.ComparableSearchResult, error)
+}
+
 // AuctionHandler はgRPC/Connectのハンドラー実装です
 // プロトコル層（protobuf）とドメイン層（usecase）を橋渡しします
 type AuctionHandler struct {
-	uc       AuctionGetter
-	catUC    CategoryGetter
-	searchUC SearchGetter
+	uc           AuctionGetter
+	catUC        CategoryGetter
+	searchUC     SearchGetter
+	comparableUC ComparableGetter
 }
 
 // NewAuctionHandler は新しいAuctionHandlerインスタンスを作成します
-func NewAuctionHandler(uc AuctionGetter, catUC CategoryGetter, searchUC SearchGetter) *AuctionHandler {
+func NewAuctionHandler(uc AuctionGetter, catUC CategoryGetter, searchUC SearchGetter, comparableUC ComparableGetter) *AuctionHandler {
 	return &AuctionHandler{
-		uc:       uc,
-		catUC:    catUC,
-		searchUC: searchUC,
+		uc:           uc,
+		catUC:        catUC,
+		searchUC:     searchUC,
+		comparableUC: comparableUC,
 	}
 }
 
@@ -164,6 +171,42 @@ func (h *AuctionHandler) SearchAuctions(
 	resp := &yahoo_auctionv1.SearchAuctionsResponse{
 		Items:      items,
 		TotalCount: pageResult.TotalCount,
+	}
+
+	return connect.NewResponse(resp), nil
+}
+
+// SearchComparables は Sold search から Comparable を検索する RPC ハンドラーです。
+func (h *AuctionHandler) SearchComparables(
+	ctx context.Context,
+	req *connect.Request[yahoo_auctionv1.SearchComparablesRequest],
+) (*connect.Response[yahoo_auctionv1.SearchComparablesResponse], error) {
+	result, err := h.comparableUC.SearchComparables(
+		ctx,
+		req.Msg.CategoryId,
+		req.Msg.IdentityFieldValue,
+		req.Msg.LookbackDays,
+	)
+	if err != nil {
+		return nil, connect.NewError(upstreamErrorToConnectCode(err), err)
+	}
+
+	comparables := make([]*yahoo_auctionv1.Comparable, 0, len(result.Comparables))
+	for _, c := range result.Comparables {
+		row := &yahoo_auctionv1.Comparable{
+			AuctionId:    c.AuctionID,
+			Title:        c.Title,
+			WinningPrice: c.WinningPrice,
+		}
+		if !c.EndedAt.IsZero() {
+			row.EndedAt = timestamppb.New(c.EndedAt)
+		}
+		comparables = append(comparables, row)
+	}
+
+	resp := &yahoo_auctionv1.SearchComparablesResponse{
+		Comparables: comparables,
+		Count:       result.Count,
 	}
 
 	return connect.NewResponse(resp), nil

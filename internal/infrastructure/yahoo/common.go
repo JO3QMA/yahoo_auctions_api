@@ -124,3 +124,12 @@ func ExtractProductList(doc *goquery.Document) (*model.CategoryItemsPage, error)
 		HasNext:    len(items) >= 50,
 	}, nil
 }
+
+// extractNextDataJSON は __NEXT_DATA__ スクリプトタグの JSON 本文を返します。
+func extractNextDataJSON(doc *goquery.Document) ([]byte, error) {
+	raw := strings.TrimSpace(doc.Find(`script#__NEXT_DATA__`).First().Text())
+	if raw == "" {
+		return nil, fmt.Errorf("failed to parse __NEXT_DATA__: not found")
+	}
+	return []byte(raw), nil
+}

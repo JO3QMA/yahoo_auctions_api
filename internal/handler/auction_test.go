@@ -66,7 +66,7 @@ func TestAuctionHandler_GetAuction_mapsDomainToProto(t *testing.T) {
 		},
 	}
 
-	h := NewAuctionHandler(fakeAuctionGetter{item: item}, nil, nil)
+	h := NewAuctionHandler(fakeAuctionGetter{item: item}, nil, nil, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.GetAuctionRequest{AuctionId: item.AuctionID})
 	resp, err := h.GetAuction(context.Background(), req)
@@ -135,7 +135,7 @@ func TestAuctionHandler_GetAuction_returnsNotFoundOnUpstream404(t *testing.T) {
 	t.Parallel()
 
 	err404 := fmt.Errorf("upstream: %w", &yahoo.UpstreamError{StatusCode: 404})
-	h := NewAuctionHandler(fakeAuctionGetter{err: err404}, nil, nil)
+	h := NewAuctionHandler(fakeAuctionGetter{err: err404}, nil, nil, nil)
 	req := connect.NewRequest(&yahoo_auctionv1.GetAuctionRequest{AuctionId: "x1234567890"})
 	_, err := h.GetAuction(context.Background(), req)
 	if err == nil {
@@ -176,7 +176,7 @@ func TestAuctionHandler_GetCategoryItems_mapsDomainToProto(t *testing.T) {
 		HasNext:    true,
 	}
 
-	h := NewAuctionHandler(nil, fakeCategoryGetter{page: itemsPage}, nil)
+	h := NewAuctionHandler(nil, fakeCategoryGetter{page: itemsPage}, nil, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.GetCategoryItemsRequest{
 		CategoryId: "2084261685",
@@ -226,7 +226,7 @@ func TestAuctionHandler_GetCategoryItems_returnsNotFoundWhenUpstream404(t *testi
 	t.Parallel()
 
 	err404 := fmt.Errorf("upstream: %w", &yahoo.UpstreamError{StatusCode: 404})
-	h := NewAuctionHandler(nil, fakeCategoryGetter{err: err404}, nil)
+	h := NewAuctionHandler(nil, fakeCategoryGetter{err: err404}, nil, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.GetCategoryItemsRequest{
 		CategoryId: "2084261685",
@@ -250,7 +250,7 @@ func TestAuctionHandler_GetCategoryItems_returnsNotFoundWhenUpstream404(t *testi
 func TestAuctionHandler_GetCategoryItems_returnsErrorOnUsecaseError(t *testing.T) {
 	t.Parallel()
 
-	h := NewAuctionHandler(nil, fakeCategoryGetter{err: errors.New("internal error")}, nil)
+	h := NewAuctionHandler(nil, fakeCategoryGetter{err: errors.New("internal error")}, nil, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.GetCategoryItemsRequest{
 		CategoryId: "2084261685",
@@ -289,7 +289,7 @@ func TestAuctionHandler_SearchAuctions_mapsDomainToProto(t *testing.T) {
 		HasNext:    true,
 	}
 
-	h := NewAuctionHandler(nil, nil, fakeSearchGetter{page: itemsPage})
+	h := NewAuctionHandler(nil, nil, fakeSearchGetter{page: itemsPage}, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.SearchAuctionsRequest{
 		Query: "キーワード",
@@ -333,7 +333,7 @@ func TestAuctionHandler_SearchAuctions_returnsEmptyResultWhenUpstream404(t *test
 	t.Parallel()
 
 	err404 := fmt.Errorf("upstream: %w", &yahoo.UpstreamError{StatusCode: 404})
-	h := NewAuctionHandler(nil, nil, fakeSearchGetter{err: err404})
+	h := NewAuctionHandler(nil, nil, fakeSearchGetter{err: err404}, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.SearchAuctionsRequest{
 		Query: "キーワード",
@@ -356,7 +356,7 @@ func TestAuctionHandler_SearchAuctions_returnsEmptyResultWhenUpstream404(t *test
 func TestAuctionHandler_SearchAuctions_returnsErrorOnUsecaseError(t *testing.T) {
 	t.Parallel()
 
-	h := NewAuctionHandler(nil, nil, fakeSearchGetter{err: errors.New("search error")})
+	h := NewAuctionHandler(nil, nil, fakeSearchGetter{err: errors.New("search error")}, nil)
 
 	req := connect.NewRequest(&yahoo_auctionv1.SearchAuctionsRequest{
 		Query: "キーワード",
@@ -374,5 +374,70 @@ func TestAuctionHandler_SearchAuctions_returnsErrorOnUsecaseError(t *testing.T) 
 	}
 	if ce.Code() != connect.CodeInternal {
 		t.Fatalf("code got %v, want %v", ce.Code(), connect.CodeInternal)
+	}
+}
+
+type fakeComparableGetter struct {
+	result *model.ComparableSearchResult
+	err    error
+}
+
+func (f fakeComparableGetter) SearchComparables(ctx context.Context, categoryID, keyword string, lookbackDays *int32) (*model.ComparableSearchResult, error) {
+	return f.result, f.err
+}
+
+func TestAuctionHandler_SearchComparables_mapsDomainToProto(t *testing.T) {
+	t.Parallel()
+
+	ended := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	result := &model.ComparableSearchResult{
+		Comparables: []*model.Comparable{
+			{
+				AuctionID:    "p1234567890",
+				Title:        "GTX 1080",
+				WinningPrice: 15000,
+				EndedAt:      ended,
+			},
+		},
+		Count: 1,
+	}
+
+	h := NewAuctionHandler(nil, nil, nil, fakeComparableGetter{result: result})
+
+	req := connect.NewRequest(&yahoo_auctionv1.SearchComparablesRequest{
+		CategoryId:         "2084040405",
+		IdentityFieldKey:   "model",
+		IdentityFieldValue: "GTX 1080",
+	})
+	resp, err := h.SearchComparables(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Msg.Count != 1 {
+		t.Fatalf("Count got %d, want 1", resp.Msg.Count)
+	}
+	if resp.Msg.Comparables[0].WinningPrice != 15000 {
+		t.Fatalf("WinningPrice got %d, want 15000", resp.Msg.Comparables[0].WinningPrice)
+	}
+}
+
+func TestAuctionHandler_SearchComparables_emptyResult(t *testing.T) {
+	t.Parallel()
+
+	h := NewAuctionHandler(nil, nil, nil, fakeComparableGetter{result: &model.ComparableSearchResult{
+		Comparables: []*model.Comparable{},
+		Count:       0,
+	}})
+
+	req := connect.NewRequest(&yahoo_auctionv1.SearchComparablesRequest{
+		CategoryId:         "2084040405",
+		IdentityFieldValue: "missing",
+	})
+	resp, err := h.SearchComparables(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Msg.Count != 0 {
+		t.Fatalf("Count got %d, want 0", resp.Msg.Count)
 	}
 }
