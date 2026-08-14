@@ -6,7 +6,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/jo3qma/protobuf/gen/go v0.1.3
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
